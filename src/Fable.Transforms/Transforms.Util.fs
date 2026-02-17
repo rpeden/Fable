@@ -1149,6 +1149,7 @@ module AST =
             com.LibraryDir + "/" + moduleName' + ".py"
         | Rust -> com.LibraryDir + "/" + moduleName + ".rs"
         | Dart -> com.LibraryDir + "/" + moduleName + ".dart"
+        | Java -> com.LibraryDir + "/" + moduleName + ".java"
         | TypeScript -> com.LibraryDir + "/" + moduleName + ".ts"
         | JavaScript -> com.LibraryDir + "/" + moduleName + ".js"
         | Php -> com.LibraryDir + "/" + moduleName + ".php"

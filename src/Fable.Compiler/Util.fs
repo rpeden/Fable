@@ -131,6 +131,7 @@ module File =
             | Fable.Php -> ".php"
             | Fable.Dart -> ".dart"
             | Fable.Rust -> ".rs"
+            | Fable.Java -> ".java"
             | Fable.JavaScript -> ".js"
 
         match language, usesOutDir with
@@ -635,6 +636,7 @@ module Imports =
                 if
                     importPath.EndsWith(".fs", StringComparison.Ordinal)
                     || importPath.EndsWith(".rs", StringComparison.Ordinal)
+                    || importPath.EndsWith(".java", StringComparison.Ordinal)
                 then
                     getTargetRelativePath pathResolver importPath targetDir projDir outDir
                 else

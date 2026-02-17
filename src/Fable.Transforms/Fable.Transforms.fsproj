@@ -23,6 +23,7 @@
     <Compile Include="Python/Replacements.fs" />
     <Compile Include="Rust/Replacements.fs" />
     <Compile Include="Dart/Replacements.fs" />
+    <Compile Include="Java/Replacements.fs" />
     <Compile Include="Replacements.fs" />
     <Compile Include="Replacements.Api.fs" />
     <Compile Include="FSharp2Fable.fsi" />
@@ -47,6 +48,9 @@
     <Compile Include="Dart/Dart.fs" />
     <Compile Include="Dart/Fable2Dart.fs" />
     <Compile Include="Dart/DartPrinter.fs" />
+    <Compile Include="Java/Java.fs" />
+    <Compile Include="Java/Fable2Java.fs" />
+    <Compile Include="Java/JavaPrinter.fs" />
     <Compile Include="Rust/RustPrinter.fs" />
     <Compile Include="Rust/Fable2Rust.fs" />
     <Compile Include="State.fs" />

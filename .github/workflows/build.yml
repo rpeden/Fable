@@ -221,6 +221,27 @@ jobs:
       - name: Fable Tests - Dart
         run: ./build.sh test dart
 
+  # Separate build job for Java
+  build-java:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Fable Tests - Java
+        run: ./build.sh test java
+
   # Separate job to run F# analyzers
   analyzers:
     runs-on: ubuntu-latest

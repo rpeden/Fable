@@ -963,7 +963,8 @@ module Helpers =
         | TypeScript -> memb.IsMutable && isNotPrivate memb
         | Rust -> true // always
         | Php
-        | Dart -> false
+        | Dart
+        | Java -> false
 
     let isModuleValueForCalls com (declaringEntity: FSharpEntity) (memb: FSharpMemberOrFunctionOrValue) =
         declaringEntity.IsFSharpModule

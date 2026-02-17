@@ -12,7 +12,7 @@ type RunMode =
 type QuicktestConfig =
     {
         Language: string
-        FableLibBuilder: BuildFableLibrary
+        FableLibBuilder: IFableLibraryBuilder
         ProjectDir: string
         Extension: string
         RunMode: RunMode

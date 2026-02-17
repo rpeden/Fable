@@ -16,6 +16,7 @@ type Language =
     | Php
     | Dart
     | Rust
+    | Java
 
     override this.ToString() =
         match this with
@@ -25,6 +26,7 @@ type Language =
         | Php -> "PHP"
         | Dart -> "Dart"
         | Rust -> "Rust"
+        | Java -> "Java"
 
 type CompilerOptions =
     {

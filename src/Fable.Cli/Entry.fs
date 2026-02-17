@@ -106,6 +106,7 @@ let knownCliArgs () =
             "  - rust (alias rs)"
             "  - php"
             "  - dart"
+            "  - java"
             ""
             "Default is javascript"
             ""
@@ -194,6 +195,7 @@ let argLanguage (args: CliArgs) =
         | "dart" -> Ok Dart
         | "rs"
         | "rust" -> Ok Rust
+        | "java" -> Ok Java
         | unknown ->
             let errorMessage =
                 [
@@ -206,6 +208,7 @@ let argLanguage (args: CliArgs) =
                     "  - rust (alias rs)"
                     "  - php"
                     "  - dart"
+                    "  - java"
                 ]
                 |> String.concat "\n"
 
@@ -318,6 +321,7 @@ type Runner =
                         | Python -> "FABLE_COMPILER_PYTHON"
                         | TypeScript -> "FABLE_COMPILER_TYPESCRIPT"
                         | JavaScript -> "FABLE_COMPILER_JAVASCRIPT"
+                        | Java -> "FABLE_COMPILER_JAVA"
                     ]
                 |> List.distinct
 
@@ -463,6 +467,7 @@ let getStatus =
     | Rust -> "alpha"
     | Dart -> "beta"
     | Php -> "experimental"
+    | Java -> "experimental"
 
 let getLibPkgVersion =
     function
@@ -471,7 +476,8 @@ let getLibPkgVersion =
     | Python
     | Rust
     | Dart
-    | Php -> None
+    | Php
+    | Java -> None
 
 let private logPrelude commands language =
     match commands with

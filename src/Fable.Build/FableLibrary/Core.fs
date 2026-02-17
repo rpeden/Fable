@@ -8,6 +8,9 @@ open Build.Utils
 open System.Diagnostics
 open SimpleExec
 
+type IFableLibraryBuilder =
+    abstract Run: ?skipIfExist: bool -> unit
+
 /// <summary>
 /// Building fable-library is similar enough for all the targets
 /// that we can use this class to standardise the process.
@@ -96,3 +99,6 @@ type BuildFableLibrary
 
             "Post Fable build stage" |> toConsole
             this.PostFableBuildStage()
+
+    interface IFableLibraryBuilder with
+        member this.Run(?skipIfExist: bool) = this.Run(?skipIfExist = skipIfExist)

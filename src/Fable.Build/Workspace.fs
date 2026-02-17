@@ -48,6 +48,7 @@ module FableLibrary =
 
     let javascript = Path.Resolve("temp", "fable-library")
     let typescript = Path.Resolve("temp", "fable-library-ts")
+    let java = Path.Resolve("temp", "fable-library-java")
     let python = Path.Resolve("temp", "fable-library-py")
     let rust = Path.Resolve("temp", "fable-library-rs")
     let php = Path.Resolve("temp", "fable-library-php")

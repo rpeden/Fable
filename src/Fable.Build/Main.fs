@@ -15,6 +15,7 @@ Available commands:
         Options:
             --javascript            Build fable-library for JavaScript
             --typescript            Build fable-library for TypeScript
+            --java                  Build fable-library for Java
             --python                Build fable-library for Python
             --dart                  Build fable-library for Dart
             --rust                  Build fable-library for Rust
@@ -29,6 +30,7 @@ Available commands:
             python                  Run for Python
             dart                    Run for Dart
             rust                    Run for Rust
+            java                    Run for Java
 
         Options:
             --skip-fable-library    Skip building fable-library if folder already exists
@@ -40,6 +42,7 @@ Available commands:
             python                  Run the tests for Python
             dart                    Run the tests for Dart
             rust                    Run the tests for Rust
+            java                    Run the tests for Java
             integration             Run the integration test suite
             standalone              Tests the standalone version of Fable
                                     (Fable running on top of Node.js)
@@ -123,6 +126,7 @@ let main argv =
             match args with
             | "--javascript" :: _ -> BuildFableLibraryJavaScript().Run()
             | "--typescript" :: _ -> BuildFableLibraryTypeScript().Run()
+            | "--java" :: _ -> BuildFableLibraryJava().Run()
             | "--python" :: _ -> BuildFableLibraryPython().Run()
             | "--dart" :: _ -> BuildFableLibraryDart().Run()
             | "--rust" :: _ -> BuildFableLibraryRust().Run()
@@ -134,6 +138,7 @@ let main argv =
             | "python" :: args -> Test.Python.handle args
             | "dart" :: args -> Test.Dart.handle args
             | "rust" :: args -> Test.Rust.handle args
+            | "java" :: args -> Test.Java.handle args
             | "integration" :: args -> Test.Integration.handle args
             | "standalone" :: _ -> Test.Standalone.handle args
             // This test is using quicktest project for now,
@@ -147,6 +152,7 @@ let main argv =
             | "python" :: _ -> Quicktest.Python.handle args
             | "dart" :: _ -> Quicktest.Dart.handle args
             | "rust" :: _ -> Quicktest.Rust.handle args
+            | "java" :: _ -> Quicktest.Java.handle args
             | _ -> printHelp ()
         | "standalone" :: args -> Standalone.handle args
         | "compiler-js" :: args -> CompilerJs.handle args

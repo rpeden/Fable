@@ -59,6 +59,9 @@ let tryCall (com: ICompiler) ctx r t info thisArg args =
     | Rust -> Rust.Replacements.tryCall com ctx r t info thisArg args
     | Python -> Py.Replacements.tryCall com ctx r t info thisArg args
     | Dart -> Dart.Replacements.tryCall com ctx r t info thisArg args
+    | Java ->
+        Java.Replacements.tryCall com ctx r t info thisArg args
+        |> Option.orElseWith (fun () -> JS.Replacements.tryCall com ctx r t info thisArg args)
     | _ -> JS.Replacements.tryCall com ctx r t info thisArg args
 
 let error (com: ICompiler) msg =
@@ -66,6 +69,7 @@ let error (com: ICompiler) msg =
     | Python -> Py.Replacements.error com msg
     | Rust -> Rust.Replacements.error com msg
     | Dart -> Dart.Replacements.error com msg
+    | Java -> Java.Replacements.error com msg
     | _ -> JS.Replacements.error com msg
 
 let defaultof (com: ICompiler) ctx r typ =
@@ -82,7 +86,8 @@ let createMutablePublicValue (com: ICompiler) value =
     | TypeScript -> JS.Replacements.createAtom com value
     | Rust
     | Php
-    | Dart -> value
+    | Dart
+    | Java -> value
 
 let getRefCell (com: ICompiler) r typ (expr: Expr) =
     match com.Options.Language with

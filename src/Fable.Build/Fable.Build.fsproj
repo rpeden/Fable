@@ -14,6 +14,7 @@
     <Compile Include="FableLibrary/Dart.fs" />
     <Compile Include="FableLibrary/TypeScript.fs" />
     <Compile Include="FableLibrary/JavaScript.fs" />
+    <Compile Include="FableLibrary/Java.fs" />
     <Compile Include="FableLibrary/Rust.fs" />
     <Compile Include="WorkerJs.fs" />
     <Compile Include="Standalone.fs" />
@@ -21,6 +22,7 @@
     <Compile Include="Test/Standalone.fs" />
     <Compile Include="Test/JavaScript.fs" />
     <Compile Include="Test/Python.fs" />
+    <Compile Include="Test/Java.fs" />
     <Compile Include="Test/Rust.fs" />
     <Compile Include="Test/Dart.fs" />
     <Compile Include="Test/TypeScript.fs" />
@@ -31,6 +33,7 @@
     <Compile Include="Quicktest/JavaScript.fs" />
     <Compile Include="Quicktest/Python.fs" />
     <Compile Include="Quicktest/Rust.fs" />
+    <Compile Include="Quicktest/Java.fs" />
     <Compile Include="Quicktest/Dart.fs" />
     <Compile Include="FcsRepo.fs" />
     <Compile Include="Publish.fs" />
