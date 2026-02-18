@@ -335,6 +335,136 @@ public class Runner {
                 failwithf "javac rejected DU Java output:\n%s" javacErr
             true |> equal true
 
+        testCase "F# class constructor initializes instance fields" <| fun _ ->
+            let src = """module Program
+type Counter(initial: int) =
+    let mutable count = initial
+    member this.Value = count
+    member this.Increment() = count <- count + 1
+    member this.Add n = count <- count + n
+"""
+            let _, errors = compileJava src
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            generatedJava.IsEmpty |> equal false
+
+            let content = generatedJava |> List.map File.ReadAllText |> String.concat "\n"
+            // Class should exist with the field and constructor
+            (content.Contains("Counter") && content.Contains("count") && content.Contains("initial")) |> equal true
+
+        testCase "F# class instance methods are inside the class body" <| fun _ ->
+            let src = """module Program
+type Counter(initial: int) =
+    let mutable count = initial
+    member this.Value = count
+    member this.Increment() = count <- count + 1
+    member this.Add n = count <- count + n
+"""
+            let _, errors = compileJava src
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            generatedJava.IsEmpty |> equal false
+
+            let content = generatedJava |> List.map File.ReadAllText |> String.concat "\n"
+            // Instance methods must NOT be static module-level functions with mangled names
+            content.Contains("Counter__Increment") |> equal false
+            content.Contains("Counter__get_Value") |> equal false
+            // And should have the properly named methods present
+            content.Contains("increment") |> equal true
+            content.Contains("getValue") |> equal true
+
+        testCase "F# class instance methods have no unit parameter" <| fun _ ->
+            let src = """module Program
+type Counter(initial: int) =
+    let mutable count = initial
+    member this.Value = count
+    member this.Increment() = count <- count + 1
+"""
+            let _, errors = compileJava src
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            let content = generatedJava |> List.map File.ReadAllText |> String.concat "\n"
+            // F# unit argument must not appear as a Java parameter
+            content.Contains("unitVar") |> equal false
+            content.Contains("void unitVar") |> equal false
+
+        testCase "F# class with instance state compiles with javac" <| fun _ ->
+            let src = """module Program
+type Counter(initial: int) =
+    let mutable count = initial
+    member this.Value = count
+    member this.Increment() = count <- count + 1
+    member this.Add n = count <- count + n
+"""
+            let _, errors = compileJava src
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            generatedJava.IsEmpty |> equal false
+
+            let compileOutput = System.IO.Path.Combine(outDir, "javac-class-check")
+            if Directory.Exists(compileOutput) then Directory.Delete(compileOutput, true)
+            Directory.CreateDirectory(compileOutput) |> ignore
+
+            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ generatedJava
+            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
+            if javacCode <> 0 then
+                failwithf "javac rejected F# class Java output:\n%s" javacErr
+            true |> equal true
+
+        testCase "F# class can be instantiated and methods called at runtime" <| fun _ ->
+            let src = """module Program
+type Counter(initial: int) =
+    let mutable count = initial
+    member this.Value = count
+    member this.Increment() = count <- count + 1
+    member this.Add n = count <- count + n
+"""
+            let _, errors = compileJava src
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            generatedJava.IsEmpty |> equal false
+
+            let runnerJava = System.IO.Path.Combine(outDir, "ClassRunner.java")
+            File.WriteAllText(
+                runnerJava,
+                """package testproject;
+
+public class ClassRunner {
+    public static void main(String[] args) {
+        Program.Counter c = new Program.Counter(5);
+        c.increment();
+        if (c.count != 6) {
+            throw new RuntimeException("Expected count=6 after increment, got " + c.count);
+        }
+        c.add(4);
+        if (c.count != 10) {
+            throw new RuntimeException("Expected count=10 after add(4), got " + c.count);
+        }
+    }
+}
+"""
+            )
+
+            let compileOutput = System.IO.Path.Combine(outDir, "javac-class-run")
+            if Directory.Exists(compileOutput) then Directory.Delete(compileOutput, true)
+            Directory.CreateDirectory(compileOutput) |> ignore
+
+            let runtimeSources = Directory.GetFiles(runtimeDir, "*.java") |> Array.toList
+            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ runtimeSources @ generatedJava @ [ runnerJava ]
+            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
+            if javacCode <> 0 then
+                failwithf "javac failed for Counter class runtime test:\n%s" javacErr
+
+            let javaCode, _, javaErr = runProcess "java" [ "-cp"; compileOutput; "testproject.ClassRunner" ] repoRoot
+            if javaCode <> 0 then
+                failwithf "Counter class runtime execution failed:\n%s" javaErr
+            true |> equal true
+
         testCase "multi-file compilation uses distinct package paths" <| fun _ ->
             let originalProject = File.ReadAllText(projectFile)
             let originalProgram = File.ReadAllText(sourceFile)

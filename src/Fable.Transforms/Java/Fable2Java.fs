@@ -548,6 +548,9 @@ module Compiler =
 
             binds @ [ $"{indent}/* DecisionTreeSuccess target {targetIndex} */" ], None
 
+        // Empty object expression used by Fable as a constructor body preamble — discard silently.
+        | Fable.ObjectExpr([], _, _) -> [], None
+
         | _ -> [], Some(transformExpr com expr)
 
     // ---------------------------------------------------------------------------
@@ -633,13 +636,66 @@ module Compiler =
             @ retLine
             @ [ "    }" ]
 
+    /// Strip a `ClassName__` prefix from a mangled Fable method name and apply camelCase conventions.
+    /// `Counter__get_Value` → `getValue`, `Counter__Increment` → `increment`, `Counter__Add_Z524259A4` → `add`
+    let private unmangleName (className: string) (rawName: string) : string =
+        // Strip "ClassName__" prefix if present.
+        let prefix = className + "__"
+
+        let noPrefix =
+            if rawName.StartsWith(prefix, StringComparison.Ordinal) then
+                rawName.[prefix.Length ..]
+            else
+                rawName
+
+        // Strip a trailing hash suffix that Fable appends to disambiguate overloads: `_ZXXXXXXXX`.
+        let noHash =
+            let underscoreZ = noPrefix.LastIndexOf("_Z", StringComparison.Ordinal)
+
+            if underscoreZ > 0 then
+                noPrefix.[.. underscoreZ - 1]
+            else
+                noPrefix
+
+        // get_Value → getValue, set_Value → setValue; other names get first letter lowercased.
+        let normalized =
+            if noHash.StartsWith("get_", StringComparison.Ordinal) && noHash.Length > 4 then
+                let prop = noHash.[4..]
+
+                "get"
+                + (string (Char.ToUpper(prop.[0])))
+                + (if prop.Length > 1 then
+                       prop.[1..]
+                   else
+                       "")
+            elif noHash.StartsWith("set_", StringComparison.Ordinal) && noHash.Length > 4 then
+                let prop = noHash.[4..]
+
+                "set"
+                + (string (Char.ToUpper(prop.[0])))
+                + (if prop.Length > 1 then
+                       prop.[1..]
+                   else
+                       "")
+            else
+                (string (Char.ToLower(noHash.[0])))
+                + (if noHash.Length > 1 then
+                       noHash.[1..]
+                   else
+                       "")
+
+        javaIdent normalized
+
     /// Emit an instance method (member of a class/record/DU).
     /// The first arg with IsThisArgument=true becomes `this` inside the body (via IdentExpr handling)
     /// and is omitted from the parameter list.
     let private transformAttachedMember (com: Compiler) (decl: Fable.MemberDecl) : string list =
         let jName = javaIdent decl.Name
         let hasThis = decl.Args |> List.exists (fun a -> a.IsThisArgument)
-        let methodArgs = decl.Args |> List.filter (fun a -> not a.IsThisArgument)
+        // Skip the `this` arg and any F# unit-typed args — neither maps to a real Java parameter.
+        let methodArgs =
+            decl.Args
+            |> List.filter (fun a -> not a.IsThisArgument && a.Type <> Fable.Type.Unit)
 
         let staticMod =
             if hasThis then
@@ -689,6 +745,16 @@ module Compiler =
         @ retLine
         @ [ "    }" ]
 
+    /// Emit an attached member, applying name unmangling when the declaration carries a mangled name.
+    let private emitAttachedMember (com: Compiler) (ownerName: string) (decl: Fable.MemberDecl) : string list =
+        let normalizedDecl =
+            if decl.IsMangled then
+                { decl with Name = unmangleName ownerName decl.Name }
+            else
+                decl
+
+        transformAttachedMember com normalizedDecl
+
     /// Emit a Java class for an F# record.
     let private transformRecordDecl (com: Compiler) (entity: Fable.Entity) (decl: Fable.ClassDecl) : string list =
         let className = javaIdent decl.Name
@@ -728,7 +794,8 @@ module Compiler =
         let ctorLines =
             [ $"    public {className}({ctorParams}) {{" ] @ ctorBody @ [ "    }" ]
 
-        let memberLines = decl.AttachedMembers |> List.collect (transformAttachedMember com)
+        let memberLines =
+            decl.AttachedMembers |> List.collect (emitAttachedMember com decl.Name)
 
         [ $"public static final class {className} {{" ]
         @ fieldDecls
@@ -783,7 +850,8 @@ module Compiler =
             )
             |> List.concat
 
-        let memberLines = decl.AttachedMembers |> List.collect (transformAttachedMember com)
+        let memberLines =
+            decl.AttachedMembers |> List.collect (emitAttachedMember com decl.Name)
 
         [ $"public static abstract class {className} {{" ]
         @ [ "    public abstract int tag();" ]
@@ -823,7 +891,8 @@ module Compiler =
 
                 [ $"    public {className}({ctorArgs}) {{" ] @ stmts @ [ "    }" ]
 
-        let memberLines = decl.AttachedMembers |> List.collect (transformAttachedMember com)
+        let memberLines =
+            decl.AttachedMembers |> List.collect (emitAttachedMember com decl.Name)
 
         [ $"public static class {className} {{" ]
         @ fieldDecls
@@ -863,10 +932,45 @@ module Compiler =
         let packageName = getPackageName com
         let className = getClassName com
 
+        // Pre-pass: collect module-level MemberDeclarations that are actually instance methods.
+        // Fable emits these as standalone mangled functions (e.g. `Counter__Increment`) with the
+        // first arg marked IsThisArgument instead of putting them in ClassDeclaration.AttachedMembers.
+        // We group them by owning class and inject them back during class emission.
+        let instanceMethodsByClass =
+            file.Declarations
+            |> List.choose (
+                function
+                | Fable.Declaration.MemberDeclaration d when not d.Args.IsEmpty && d.Args.[0].IsThisArgument ->
+                    match d.Args.[0].Type with
+                    | Fable.Type.DeclaredType(entityRef, _) -> Some(entityRef.DisplayName, d)
+                    | _ -> None
+                | _ -> None
+            )
+            |> List.groupBy fst
+            |> Map.ofList
+            |> Map.map (fun _ pairs -> pairs |> List.map snd)
+
+        let isAbsorbedInstanceMethod =
+            function
+            | Fable.Declaration.MemberDeclaration d -> not d.Args.IsEmpty && d.Args.[0].IsThisArgument
+            | _ -> false
+
+        // For ClassDeclarations, augment AttachedMembers with the re-grouped instance methods.
+        let transformDeclWithGrouping decl =
+            match decl with
+            | Fable.Declaration.ClassDeclaration d ->
+                let extra = instanceMethodsByClass |> Map.tryFind d.Name |> Option.defaultValue []
+                let augmented = { d with AttachedMembers = d.AttachedMembers @ extra }
+                transformDeclaration com (Fable.Declaration.ClassDeclaration augmented)
+            | _ -> transformDeclaration com decl
+
         // All declarations go inside a single `public final class ClassName {}` wrapper.
         // Records, DUs, and classes are emitted as `public static` nested classes.
         // This ensures each .java file has exactly one public top-level class.
-        let memberLines = file.Declarations |> List.collect (transformDeclaration com)
+        let memberLines =
+            file.Declarations
+            |> List.filter (isAbsorbedInstanceMethod >> not)
+            |> List.collect transformDeclWithGrouping
 
         let outputLines =
             if memberLines.IsEmpty then
