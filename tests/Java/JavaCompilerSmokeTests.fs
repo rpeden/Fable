@@ -175,6 +175,65 @@ public class Runner {
 
             true |> equal true
 
+        testCase "emits field for module-level let value binding" <| fun _ ->
+            let _, errors = compileJava "module Program\nlet value = 42"
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            generatedJava.IsEmpty |> equal false
+
+            let content = generatedJava |> List.head |> File.ReadAllText
+            // The stub just emits an empty class - this verifies the transformer actually walks the AST
+            (content.Contains("value") && content.Contains("42")) |> equal true
+
+        testCase "emits static method for module-level function" <| fun _ ->
+            let _, errors = compileJava "module Program\nlet add a b = a + b"
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            generatedJava.IsEmpty |> equal false
+
+            let content = generatedJava |> List.head |> File.ReadAllText
+            content.Contains("add") |> equal true
+
+        testCase "emits boolean constant correctly" <| fun _ ->
+            let _, errors = compileJava "module Program\nlet flag = true"
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            let content = generatedJava |> List.head |> File.ReadAllText
+            content.Contains("true") |> equal true
+
+        testCase "emits string constant correctly" <| fun _ ->
+            let _, errors = compileJava "module Program\nlet greeting = \"hello\""
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            let content = generatedJava |> List.head |> File.ReadAllText
+            content.Contains("hello") |> equal true
+
+        testCase "transform output compiles with javac after AST is walked" <| fun _ ->
+            let _, errors = compileJava "module Program\nlet value = 42\nlet double x = x + x"
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            generatedJava.IsEmpty |> equal false
+
+            let compileOutput = System.IO.Path.Combine(outDir, "javac-transform-check")
+
+            if Directory.Exists(compileOutput) then
+                Directory.Delete(compileOutput, true)
+
+            Directory.CreateDirectory(compileOutput) |> ignore
+
+            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ generatedJava
+            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
+
+            if javacCode <> 0 then
+                failwithf "javac rejected generated Java after transformer walk:\n%s" javacErr
+
+            true |> equal true
+
         testCase "multi-file compilation uses distinct package paths" <| fun _ ->
             let originalProject = File.ReadAllText(projectFile)
             let originalProgram = File.ReadAllText(sourceFile)
