@@ -234,6 +234,107 @@ public class Runner {
 
             true |> equal true
 
+        testCase "generic function emits type parameter declaration" <| fun _ ->
+            let _, errors = compileJava "module Program\nlet identity x = x"
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            generatedJava.IsEmpty |> equal false
+
+            let content = generatedJava |> List.head |> File.ReadAllText
+            // Should emit something like `public static <A> A identity(A x)` — the `<` is the key indicator
+            content.Contains("<") |> equal true
+
+        testCase "generic function compiles with javac" <| fun _ ->
+            let _, errors = compileJava "module Program\nlet identity x = x"
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            generatedJava.IsEmpty |> equal false
+
+            let compileOutput = System.IO.Path.Combine(outDir, "javac-generics-check")
+            if Directory.Exists(compileOutput) then Directory.Delete(compileOutput, true)
+            Directory.CreateDirectory(compileOutput) |> ignore
+
+            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ generatedJava
+            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
+            if javacCode <> 0 then
+                failwithf "javac rejected generic Java output:\n%s" javacErr
+            true |> equal true
+
+        testCase "multi-argument generic function compiles with javac" <| fun _ ->
+            let _, errors = compileJava "module Program\nlet first a b = a"
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            generatedJava.IsEmpty |> equal false
+
+            let compileOutput = System.IO.Path.Combine(outDir, "javac-generic-multi-check")
+            if Directory.Exists(compileOutput) then Directory.Delete(compileOutput, true)
+            Directory.CreateDirectory(compileOutput) |> ignore
+
+            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ generatedJava
+            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
+            if javacCode <> 0 then
+                failwithf "javac rejected multi-arg generic Java output:\n%s" javacErr
+            true |> equal true
+
+        testCase "F# record emits Java class with fields" <| fun _ ->
+            let _, errors = compileJava "module Program\ntype Point = { X: int; Y: int }"
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            generatedJava.IsEmpty |> equal false
+
+            let content = generatedJava |> List.map File.ReadAllText |> String.concat "\n"
+            // The record class should contain the field names
+            (content.Contains("Point") && content.Contains("X") && content.Contains("Y")) |> equal true
+
+        testCase "F# record type compiles with javac" <| fun _ ->
+            let _, errors = compileJava "module Program\ntype Point = { X: int; Y: int }"
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            generatedJava.IsEmpty |> equal false
+
+            let compileOutput = System.IO.Path.Combine(outDir, "javac-record-check")
+            if Directory.Exists(compileOutput) then Directory.Delete(compileOutput, true)
+            Directory.CreateDirectory(compileOutput) |> ignore
+
+            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ generatedJava
+            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
+            if javacCode <> 0 then
+                failwithf "javac rejected record Java output:\n%s" javacErr
+            true |> equal true
+
+        testCase "F# DU emits abstract base class with inner subclasses" <| fun _ ->
+            let _, errors = compileJava "module Program\ntype Shape = | Circle of Radius: double | Rectangle of Width: double * Height: double"
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            generatedJava.IsEmpty |> equal false
+
+            let content = generatedJava |> List.map File.ReadAllText |> String.concat "\n"
+            // Should contain the DU abstract base and the case names as inner classes
+            (content.Contains("Shape") && content.Contains("Circle") && content.Contains("Rectangle")) |> equal true
+
+        testCase "F# DU type compiles with javac" <| fun _ ->
+            let _, errors = compileJava "module Program\ntype Shape = | Circle of Radius: double | Rectangle of Width: double * Height: double"
+            errors.Length |> equal 0
+
+            let generatedJava = getGeneratedJavaFiles ()
+            generatedJava.IsEmpty |> equal false
+
+            let compileOutput = System.IO.Path.Combine(outDir, "javac-du-check")
+            if Directory.Exists(compileOutput) then Directory.Delete(compileOutput, true)
+            Directory.CreateDirectory(compileOutput) |> ignore
+
+            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ generatedJava
+            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
+            if javacCode <> 0 then
+                failwithf "javac rejected DU Java output:\n%s" javacErr
+            true |> equal true
+
         testCase "multi-file compilation uses distinct package paths" <| fun _ ->
             let originalProject = File.ReadAllText(projectFile)
             let originalProgram = File.ReadAllText(sourceFile)
