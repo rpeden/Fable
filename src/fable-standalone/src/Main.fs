@@ -343,6 +343,12 @@ type RustResult(ast: Rust.AST.Types.Crate, errors) =
     interface IFableResult with
         member _.FableErrors = errors
 
+type JavaResult(ast: Java.File, errors) =
+    member _.Ast = ast
+
+    interface IFableResult with
+        member _.FableErrors = errors
+
 let transformToFableAst (com: Compiler) : Fable.File =
     let fileName = com.CurrentFile
 
@@ -379,6 +385,9 @@ let transformToTargetAst (com: CompilerImpl) (fableAst: Fable.File) : IFableResu
     | Rust ->
         let ast = Rust.Fable2Rust.Compiler.transformFile com fableAst
         upcast RustResult(ast, errors)
+    | Java ->
+        let ast = Fable2Java.Compiler.transformFile com fableAst
+        upcast JavaResult(ast, errors)
 
 let compileToTargetAst (results: IParseAndCheckResults) fileName fableLibrary typedArrays language : IFableResult =
     let res = results :?> ParseAndCheckResults
@@ -414,6 +423,7 @@ let getLanguage (language: string) =
     | "dart" -> Dart
     | "rs"
     | "rust" -> Rust
+    | "java" -> Java
     | _ -> failwithf "Unsupported language: %s" language
 
 let init () =
@@ -473,6 +483,7 @@ let init () =
             | :? PhpResult as php -> PhpPrinter.run writer php.Ast
             | :? PythonResult as python -> PythonPrinter.run writer python.Ast
             | :? RustResult as rust -> Rust.RustPrinter.run writer rust.Ast
+            | :? JavaResult as java -> JavaPrinter.run writer java.Ast
             | _ -> failwith "Unexpected Fable result"
 
         member _.FSharpAstToString(results: IParseAndCheckResults, fileName: string) =

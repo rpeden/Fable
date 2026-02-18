@@ -671,6 +671,7 @@ module Helpers =
             | Python -> Fable.Py.Naming.sanitizeIdent Fable.Py.Naming.pyBuiltins.Contains name part
             | Rust -> (entityName |> cleanNameAsRustIdentifier)
             | Dart -> Naming.sanitizeDartIdent (fun _ -> false) name part
+            | Java -> Naming.sanitizeJavaIdent (fun _ -> false) name part
             | _ -> Naming.sanitizeJsIdent (fun _ -> false) name part
 
         sanitizedName
@@ -755,6 +756,7 @@ module Helpers =
                 Fable.Py.Naming.sanitizeIdent Fable.Py.Naming.pyBuiltins.Contains name part
             | Rust -> Naming.buildNameWithoutSanitation name part
             | Dart -> Naming.sanitizeDartIdent (fun _ -> false) name part
+            | Java -> Naming.sanitizeJavaIdent (fun _ -> false) name part
             | _ -> Naming.sanitizeJsIdent (fun _ -> false) name part
 
         let hasOverloadSuffix = not (String.IsNullOrEmpty(part.OverloadSuffix))
@@ -777,6 +779,7 @@ module Helpers =
             | Python -> Fable.Py.Naming.sanitizeIdent
             | Dart -> Naming.sanitizeDartIdent
             | Rust -> Naming.sanitizeRustIdent
+            | Java -> Naming.sanitizeJavaIdent
             | _ -> Naming.sanitizeJsIdent
 
         let name = (name, Naming.NoMemberPart) ||> sanitizeIdent (isUsedName ctx)
@@ -1762,6 +1765,7 @@ module Identifiers =
                     part
             | Rust -> Naming.sanitizeRustIdent (isUsedName ctx) (name |> cleanNameAsRustIdentifier) part
             | Dart -> Naming.sanitizeDartIdent (isUsedName ctx) name part
+            | Java -> Naming.sanitizeJavaIdent (isUsedName ctx) name part
             | _ -> Naming.sanitizeJsIdent (isUsedName ctx) name part
 
         let isMutable =

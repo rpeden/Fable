@@ -5,11 +5,11 @@ Last updated: 2026-02-17
 
 ## Overall Status
 - [x] Phase 0: Foundation and Feature Flag
-- [ ] Phase 1: Backend Skeleton + Closures + Async
-- [ ] Phase 2: Naming, Packages, and Identifiers
-- [ ] Phase 3: Runtime Library and Replacements
-- [ ] Phase 4: Interop and Fable.Core Surface
-- [ ] Phase 5: Build, Packaging, Distribution
+- [x] Phase 1: Backend Skeleton + Closures + Async
+- [x] Phase 2: Naming, Packages, and Identifiers
+- [x] Phase 3: Runtime Library and Replacements
+- [x] Phase 4: Interop and Fable.Core Surface
+- [x] Phase 5: Build, Packaging, Distribution
 - [x] Phase 6: Tests and CI
 
 ---
@@ -87,27 +87,27 @@ Last updated: 2026-02-17
 ---
 
 ## Phase 2 — Naming, Packages, and Identifiers
-- [ ] Add Java keyword set and identifier sanitizer
-- [ ] Integrate Java sanitizer in symbol naming/binding
-- [ ] Add package derivation from namespace/path
-- [ ] Add multi-file collision tests
+- [x] Add Java keyword set and identifier sanitizer
+- [x] Integrate Java sanitizer in symbol naming/binding
+- [x] Add package derivation from namespace/path
+- [x] Add multi-file collision tests
 
 ## Phase 3 — Runtime Library and Replacements
-- [ ] Bootstrap `src/fable-library-java/` structure
-- [ ] Implement `Util`, `Types`, `FSharpOption`, `FSharpList`, `Seq`, `Array`, `Map`, `Set`, `FSharpResult`, `String`
-- [ ] Expand Java replacements for primitives/collections/option/result/ref/async
-- [ ] Add representative runtime-backed test subset
+- [x] Bootstrap `src/fable-library-java/` structure
+- [x] Implement `Util`, `Types`, `FSharpOption`, `FSharpList`, `Seq`, `Array`, `Map`, `Set`, `FSharpResult`, `String`
+- [x] Expand Java replacements for primitives/collections/option/result/ref/async
+- [x] Add representative runtime-backed test subset
 
 ## Phase 4 — Interop and Fable.Core Surface
-- [ ] Add `Fable.Core.Java.fs`
-- [ ] Wire Java emit handling in transform utilities
-- [ ] Include Java core surface in `Fable.Core.fsproj`
+- [x] Add `Fable.Core.Java.fs`
+- [x] Wire Java emit handling in transform utilities
+- [x] Include Java core surface in `Fable.Core.fsproj`
 
 ## Phase 5 — Build, Packaging, Distribution
 - [x] Add `Fable.Build/FableLibrary/Java.fs`
 - [x] Register Java library builder in build main/workspace/fsproj
 - [x] Include Java library assets in `Fable.Cli.fsproj`
-- [ ] Add standalone/compiler-js Java routing (optional in first pass)
+- [x] Add standalone/compiler-js Java routing (optional in first pass)
 
 ## Phase 6 — Tests and CI
 - [x] Add Java test project (`tests/Java/Fable.Tests.Java.fsproj`)
@@ -126,3 +126,13 @@ Last updated: 2026-02-17
 - Java pipeline smoke compile verified end-to-end with `--lang java` when passing `--fableLib src/fable-library-ts` as a temporary workaround.
 - Default library resolution for Java still expects built temp assets (`[temp/]fable-library-java`) and fails until Phase 5 build/library packaging wiring is implemented.
 - Java-focused tests were migrated to `tests/Java` and removed from `tests/Integration/Compiler` to match backend test layout conventions.
+- Phase 3 runtime bootstrap advanced with initial Java runtime modules: `Util`, `Types`, and `FSharpOption`.
+- Phase 3 runtime surface expanded with initial `FSharpList`, `Seq`, and `Array` modules.
+- Phase 3 runtime surface further expanded with initial `FSharpResult`, `String`, `Map`, and `Set` modules.
+- Java execution and generated-code smoke tests now compile with `javac --release 8`, and runtime sources were adjusted for Java 8 syntax compatibility.
+- Added end-to-end execution smoke covering runtime + generated Java under Java 8 (`javac` + `java`).
+- Expanded Java replacements mapping for Option/Result/Seq/Map/Set/String plus List/Array modules.
+- Added Java interop core surface (`Fable.Core.Java`) with `emitExpr`/`emitStatement` and import helpers.
+- Added Java replacement routing for `Fable.Core.Java` emit/import helpers and test coverage for call classification.
+- Added Java routing in standalone/compiler-js (`fable-standalone` language parse/transform/print and `fable-compiler-js` `.java` extension mapping).
+- Phase 1 marked complete after parity audit and green Java suite validation (`49 passed`).

@@ -74,6 +74,16 @@ module Naming =
         || (index > 0 && 48 <= code && code <= 57) // 0-9
         || Char.IsLetter c
 
+    let isJavaIdentChar index (c: char) =
+        let code = int c
+
+        c = '_'
+        || c = '$'
+        || (65 <= code && code <= 90) // a-z
+        || (97 <= code && code <= 122) // A-Z
+        || (index > 0 && 48 <= code && code <= 57) // 0-9
+        || Char.IsLetter c
+
     let hasIdentForbiddenChars isIdentChar (ident: string) =
         let mutable found = false
 
@@ -115,6 +125,9 @@ module Naming =
     let replaceCharJs (c: char) =
         "$" + String.Format("{0:X}", int c).PadLeft(4, '0')
 
+    let replaceCharJava (c: char) =
+        "$" + String.Format("{0:X}", int c).PadLeft(4, '0')
+
     let sanitizeRustIdentForbiddenChars (ident: string) =
         ident |> sanitizeIdentForbiddenCharsWith isRustIdentChar replaceCharRust
 
@@ -126,6 +139,9 @@ module Naming =
 
     let sanitizeJsIdentForbiddenChars (ident: string) =
         ident |> sanitizeIdentForbiddenCharsWith isJsIdentChar replaceCharJs
+
+    let sanitizeJavaIdentForbiddenChars (ident: string) =
+        ident |> sanitizeIdentForbiddenCharsWith isJavaIdentChar replaceCharJava
 
     let replaceRegex (pattern: string) (value: string) (input: string) = Regex.Replace(input, pattern, value)
 
@@ -407,6 +423,64 @@ module Naming =
                 "fetch"
             ]
 
+    let javaKeywords =
+        System.Collections.Generic.HashSet
+            [
+                "abstract"
+                "assert"
+                "boolean"
+                "break"
+                "byte"
+                "case"
+                "catch"
+                "char"
+                "class"
+                "const"
+                "continue"
+                "default"
+                "do"
+                "double"
+                "else"
+                "enum"
+                "extends"
+                "final"
+                "finally"
+                "float"
+                "for"
+                "goto"
+                "if"
+                "implements"
+                "import"
+                "instanceof"
+                "int"
+                "interface"
+                "long"
+                "native"
+                "new"
+                "package"
+                "private"
+                "protected"
+                "public"
+                "return"
+                "short"
+                "static"
+                "strictfp"
+                "super"
+                "switch"
+                "synchronized"
+                "this"
+                "throw"
+                "throws"
+                "transient"
+                "try"
+                "void"
+                "volatile"
+                "while"
+                "true"
+                "false"
+                "null"
+            ]
+
     let preventConflicts conflicts originalName =
         let rec check originalName n =
             let name =
@@ -477,6 +551,12 @@ module Naming =
         else
             name
 
+    let checkJavaKeywords name =
+        if javaKeywords.Contains name then
+            name + "_"
+        else
+            name
+
     let sanitizeRustIdent conflicts name part =
         // Replace Forbidden Chars
         buildName sanitizeRustIdentForbiddenChars name part
@@ -495,6 +575,13 @@ module Naming =
         // Replace Forbidden Chars
         buildName sanitizeJsIdentForbiddenChars name part
         |> checkJsKeywords
+        // Check if it already exists
+        |> preventConflicts conflicts
+
+    let sanitizeJavaIdent conflicts name part =
+        // Replace Forbidden Chars
+        buildName sanitizeJavaIdentForbiddenChars name part
+        |> checkJavaKeywords
         // Check if it already exists
         |> preventConflicts conflicts
 

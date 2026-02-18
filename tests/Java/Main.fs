@@ -10,6 +10,8 @@ let allTests =
         JavaRuntimeSurface.tests
         JavaBuildWiring.tests
         JavaCompilerSmoke.tests
+        JavaNaming.tests
+        JavaRuntimeExecution.tests
     ]
 
 [<EntryPoint>]

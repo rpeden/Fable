@@ -24,6 +24,8 @@
     <Compile Include="JavaRuntimeSurfaceTests.fs" />
     <Compile Include="JavaBuildWiringTests.fs" />
     <Compile Include="JavaCompilerSmokeTests.fs" />
+    <Compile Include="JavaNamingTests.fs" />
+    <Compile Include="JavaRuntimeExecutionTests.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>
 </Project>

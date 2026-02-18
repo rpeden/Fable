@@ -14,6 +14,7 @@
     <Compile Include="Fable.Core.JS.fs" />
     <Compile Include="Fable.Core.Py.fs" />
     <Compile Include="Fable.Core.Dart.fs" />
+    <Compile Include="Fable.Core.Java.fs" />
     <Compile Include="Fable.Core.Rust.fs" />
     <Compile Include="Fable.Core.JsInterop.fs" />
     <Compile Include="Fable.Core.PhpInterop.fs" />

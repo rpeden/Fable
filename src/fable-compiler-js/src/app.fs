@@ -294,6 +294,7 @@ let parseFiles projectFileName options =
             | "dart" -> ".dart"
             | "rs"
             | "rust" -> ".rs"
+            | "java" -> ".java"
             | _ -> failwith $"Unsupported language: %s{options.language}"
 
         let fileExt =
