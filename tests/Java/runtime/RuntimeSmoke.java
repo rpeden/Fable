@@ -53,7 +53,7 @@ public class RuntimeSmoke {
             throw new RuntimeException("String.join failed");
         }
 
-        Iterable<Integer> mappedSeq = Seq.map(java.util.Arrays.asList(1, 2), x -> x + 1);
+        Iterable<Integer> mappedSeq = Seq.map(x -> x + 1, java.util.Arrays.asList(1, 2));
         java.util.Iterator<Integer> it = mappedSeq.iterator();
         if (!it.hasNext() || it.next() != 2 || !it.hasNext() || it.next() != 3) {
             throw new RuntimeException("Seq.map failed");

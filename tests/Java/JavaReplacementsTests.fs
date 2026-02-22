@@ -82,4 +82,64 @@ let tests =
         testCase "returns unsupported for unknown Java interop helpers" <| fun _ ->
             Replacements.tryGetJavaInteropCall "nope"
             |> equal Replacements.JavaInteropCall.Unsupported
+
+        testCase "classifies System.Console helpers" <| fun _ ->
+            Replacements.tryGetJavaConsoleCall "Write"
+            |> equal Replacements.JavaConsoleCall.Write
+
+            Replacements.tryGetJavaConsoleCall "WriteLine"
+            |> equal Replacements.JavaConsoleCall.WriteLine
+
+            Replacements.tryGetJavaConsoleCall "ReadLine"
+            |> equal Replacements.JavaConsoleCall.ReadLine
+
+            Replacements.tryGetJavaConsoleCall "Beep"
+            |> equal Replacements.JavaConsoleCall.ConsoleUnsupported
+
+        testCase "maps System.Math methods to Java Math names" <| fun _ ->
+            Replacements.tryGetJavaMathMember "Sqrt"
+            |> equal (Some "sqrt")
+
+            Replacements.tryGetJavaMathMember "Round"
+            |> equal (Some "round")
+
+            Replacements.tryGetJavaMathMember "Atan2"
+            |> equal (Some "atan2")
+
+            Replacements.tryGetJavaMathMember "Nope"
+            |> equal None
+
+        testCase "classifies System.Object helpers" <| fun _ ->
+            Replacements.tryGetJavaObjectCall "ToString"
+            |> equal Replacements.JavaObjectCall.ToString
+
+            Replacements.tryGetJavaObjectCall "Equals"
+            |> equal Replacements.JavaObjectCall.Equals
+
+            Replacements.tryGetJavaObjectCall "GetHashCode"
+            |> equal Replacements.JavaObjectCall.GetHashCode
+
+            Replacements.tryGetJavaObjectCall "ReferenceEquals"
+            |> equal Replacements.JavaObjectCall.ReferenceEquals
+
+            Replacements.tryGetJavaObjectCall "Nope"
+            |> equal Replacements.JavaObjectCall.ObjectUnsupported
+
+        testCase "maps String to Java runtime module" <| fun _ ->
+            // String instance methods should be routed through tryGetCoreReplacement
+            Replacements.tryGetCoreReplacement "System.String" "Substring"
+            |> equal (Some("String", "substring"))
+
+            Replacements.tryGetCoreReplacement "System.String" "ToUpper"
+            |> equal (Some("String", "toUpper"))
+
+        testCase "maps OptionModule methods to runtime" <| fun _ ->
+            Replacements.tryGetCoreReplacement "Microsoft.FSharp.Core.OptionModule" "Map"
+            |> equal (Some("FSharpOption", "map"))
+
+            Replacements.tryGetCoreReplacement "Microsoft.FSharp.Core.OptionModule" "Bind"
+            |> equal (Some("FSharpOption", "bind"))
+
+            Replacements.tryGetCoreReplacement "Microsoft.FSharp.Core.OptionModule" "DefaultValue"
+            |> equal (Some("FSharpOption", "defaultValue"))
     ]

@@ -1,340 +1,100 @@
 module Fable.Tests.Java.JavaCompilerSmoke
 
-open System
-open System.Diagnostics
 open System.IO
-open Fable
-open Fable.Cli.Main
-open Fable.Transforms.State
-open Fable.Compiler.Util
+open Fable.Tests.Java.JavaTestHelpers
 open Util.Testing
-
-let private repoRoot = System.IO.Path.GetFullPath(System.IO.Path.Combine(__SOURCE_DIRECTORY__, "../.."))
-let private projectDir = System.IO.Path.Combine(repoRoot, "tests", "Integration", "Compiler", "TestProject")
-let private projectFile = System.IO.Path.Combine(projectDir, "TestProject.fsproj")
-let private sourceFile = System.IO.Path.Combine(projectDir, "Program.fs")
-let private outDir = System.IO.Path.Combine(repoRoot, "temp", "java-compiler-smoke")
-let private runtimeDir = System.IO.Path.Combine(repoRoot, "src", "fable-library-java", "src", "main", "java", "fable", "library")
-
-let private runProcess (exe: string) (args: string list) (workingDir: string) =
-    let psi = ProcessStartInfo()
-    psi.FileName <- exe
-    psi.WorkingDirectory <- workingDir
-    psi.RedirectStandardOutput <- true
-    psi.RedirectStandardError <- true
-
-    for arg in args do
-        psi.ArgumentList.Add(arg)
-
-    use proc = new Process()
-    proc.StartInfo <- psi
-    proc.Start() |> ignore
-    let stdout = proc.StandardOutput.ReadToEnd()
-    let stderr = proc.StandardError.ReadToEnd()
-    proc.WaitForExit()
-    proc.ExitCode, stdout, stderr
-
-let private compileJava (source: string) =
-    if Directory.Exists(outDir) then
-        Directory.Delete(outDir, true)
-
-    Directory.CreateDirectory(outDir) |> ignore
-
-    let compilerOptions = CompilerOptionsHelper.Make(language = Language.Java, fileExtension = ".java")
-
-    let cliArgs =
-        { CliArgs.ProjectFile = projectFile
-          FableLibraryPath = None
-          RootDir = projectDir
-          Configuration = "Debug"
-          OutDir = Some outDir
-          IsWatch = false
-          Precompile = false
-          PrecompiledLib = None
-          PrintAst = false
-          SourceMaps = false
-          SourceMapsRoot = None
-          NoRestore = false
-          NoCache = false
-          NoParallelTypeCheck = false
-          Exclude = [ "Fable.Core" ]
-          Replace = Map.empty
-          RunProcess = None
-          CompilerOptions = compilerOptions
-          Verbosity = Verbosity.Normal }
-
-    File.WriteAllText(sourceFile, source)
-
-    let state = State.Create(cliArgs, recompileAllFiles = true)
-
-    let logs =
-        match state |> startCompilationAsync |> Async.RunSynchronously with
-        | Error(_, logs) -> Array.toList logs
-        | Ok(_, logs) -> Array.toList logs
-
-    let errors = logs |> List.filter (fun m -> m.Severity = Severity.Error)
-    logs, errors
-
-let private getGeneratedJavaFiles () =
-    Directory.GetFiles(outDir, "*.java", SearchOption.AllDirectories)
-    |> Array.filter (fun file -> not (file.Contains("fable_modules")))
-    |> Array.toList
 
 let tests =
     testList "Java Compiler Smoke" [
+        // ---- Basic compilation ----
         testCase "compiles with --lang java without compiler errors" <| fun _ ->
-            let _, errors = compileJava "module Program\nlet value = 42"
+            let errors, _ = compileAndRead "module Program\nlet value = 42" None
             errors.Length |> equal 0
 
-        testCase "writes .java output files for java compilation" <| fun _ ->
-            let _, errors = compileJava "module Program\nlet value = 42"
+        testCase "writes .java output files" <| fun _ ->
+            let errors, _ = compileAndRead "module Program\nlet value = 42" None
             errors.Length |> equal 0
-
             let javaFiles = Directory.GetFiles(outDir, "*.java", SearchOption.AllDirectories)
             javaFiles.Length > 0 |> equal true
 
         testCase "writes package declaration derived from project path" <| fun _ ->
-            let _, errors = compileJava "module Program\nlet value = 42"
+            let errors, content = compileAndRead "module Program\nlet value = 42" None
             errors.Length |> equal 0
-
-            let javaFile = Directory.GetFiles(outDir, "*.java", SearchOption.AllDirectories) |> Array.head
-            let content = File.ReadAllText(javaFile)
             content.Contains("package testproject;") |> equal true
 
-        testCase "generated Java output compiles with javac" <| fun _ ->
-            let _, errors = compileJava "module Program\nlet value = 42"
-            errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
-
-            let compileOutput = System.IO.Path.Combine(outDir, "javac-out")
-
-            if Directory.Exists(compileOutput) then
-                Directory.Delete(compileOutput, true)
-
-            Directory.CreateDirectory(compileOutput) |> ignore
-
-            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ generatedJava
-            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
-
-            if javacCode <> 0 then
-                failwithf "javac failed for generated Java:\n%s" javacErr
-
-            true |> equal true
-
-        testCase "generated Java and runtime execute together under Java 8" <| fun _ ->
-            let _, errors = compileJava "module Program\nlet value = 42"
-            errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
-
-            let runnerJava = System.IO.Path.Combine(outDir, "Runner.java")
-
-            File.WriteAllText(
-                runnerJava,
-                """package testproject;
-
-import fable.library.FSharpOption;
-
-public class Runner {
-    public static void main(String[] args) {
-        Program p = new Program();
-        if (p == null) {
-            throw new RuntimeException("Program instance creation failed");
-        }
-
-        FSharpOption<Integer> value = FSharpOption.some(42);
-        if (!value.isSome() || value.getValue() != 42) {
-            throw new RuntimeException("Runtime wiring failed");
-        }
-    }
-}
-"""
-            )
-
-            let compileOutput = System.IO.Path.Combine(outDir, "javac-run")
-
-            if Directory.Exists(compileOutput) then
-                Directory.Delete(compileOutput, true)
-
-            Directory.CreateDirectory(compileOutput) |> ignore
-
-            let runtimeSources = Directory.GetFiles(runtimeDir, "*.java") |> Array.toList
-            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ runtimeSources @ generatedJava @ [ runnerJava ]
-            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
-
-            if javacCode <> 0 then
-                failwithf "javac failed for runtime+generated execution smoke:\n%s" javacErr
-
-            let javaCode, _, javaErr = runProcess "java" [ "-cp"; compileOutput; "testproject.Runner" ] repoRoot
-
-            if javaCode <> 0 then
-                failwithf "java execution failed for runtime+generated smoke:\n%s" javaErr
-
-            true |> equal true
-
+        // ---- Value and function emission ----
         testCase "emits field for module-level let value binding" <| fun _ ->
-            let _, errors = compileJava "module Program\nlet value = 42"
+            let errors, content = compileAndRead "module Program\nlet value = 42" (Some "field-binding")
             errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
-
-            let content = generatedJava |> List.head |> File.ReadAllText
-            // The stub just emits an empty class - this verifies the transformer actually walks the AST
             (content.Contains("value") && content.Contains("42")) |> equal true
 
         testCase "emits static method for module-level function" <| fun _ ->
-            let _, errors = compileJava "module Program\nlet add a b = a + b"
+            let errors, content = compileAndRead "module Program\nlet add a b = a + b" (Some "static-method")
             errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
-
-            let content = generatedJava |> List.head |> File.ReadAllText
             content.Contains("add") |> equal true
 
-        testCase "emits boolean constant correctly" <| fun _ ->
-            let _, errors = compileJava "module Program\nlet flag = true"
+        testCase "lambda value emits typed Functional.Func1 signature" <| fun _ ->
+            let src = "module Program\nlet apply (f: int -> int) x = f x"
+            let errors, content = compileAndRead src (Some "lambda-func1-type")
             errors.Length |> equal 0
+            content.Contains("fable.library.Functional.Func1<Integer, Integer>") |> equal true
 
-            let generatedJava = getGeneratedJavaFiles ()
-            let content = generatedJava |> List.head |> File.ReadAllText
+        testCase "emits boolean constant correctly" <| fun _ ->
+            let errors, content = compileAndRead "module Program\nlet flag = true" None
+            errors.Length |> equal 0
             content.Contains("true") |> equal true
 
         testCase "emits string constant correctly" <| fun _ ->
-            let _, errors = compileJava "module Program\nlet greeting = \"hello\""
+            let errors, content = compileAndRead "module Program\nlet greeting = \"hello\"" None
             errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            let content = generatedJava |> List.head |> File.ReadAllText
             content.Contains("hello") |> equal true
 
-        testCase "transform output compiles with javac after AST is walked" <| fun _ ->
-            let _, errors = compileJava "module Program\nlet value = 42\nlet double x = x + x"
-            errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
-
-            let compileOutput = System.IO.Path.Combine(outDir, "javac-transform-check")
-
-            if Directory.Exists(compileOutput) then
-                Directory.Delete(compileOutput, true)
-
-            Directory.CreateDirectory(compileOutput) |> ignore
-
-            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ generatedJava
-            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
-
-            if javacCode <> 0 then
-                failwithf "javac rejected generated Java after transformer walk:\n%s" javacErr
-
-            true |> equal true
-
+        // ---- Generics ----
         testCase "generic function emits type parameter declaration" <| fun _ ->
-            let _, errors = compileJava "module Program\nlet identity x = x"
+            let errors, content = compileAndRead "module Program\nlet identity x = x" (Some "generic-function")
             errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
-
-            let content = generatedJava |> List.head |> File.ReadAllText
-            // Should emit something like `public static <A> A identity(A x)` — the `<` is the key indicator
             content.Contains("<") |> equal true
 
-        testCase "generic function compiles with javac" <| fun _ ->
-            let _, errors = compileJava "module Program\nlet identity x = x"
-            errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
-
-            let compileOutput = System.IO.Path.Combine(outDir, "javac-generics-check")
-            if Directory.Exists(compileOutput) then Directory.Delete(compileOutput, true)
-            Directory.CreateDirectory(compileOutput) |> ignore
-
-            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ generatedJava
-            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
-            if javacCode <> 0 then
-                failwithf "javac rejected generic Java output:\n%s" javacErr
-            true |> equal true
-
-        testCase "multi-argument generic function compiles with javac" <| fun _ ->
-            let _, errors = compileJava "module Program\nlet first a b = a"
-            errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
-
-            let compileOutput = System.IO.Path.Combine(outDir, "javac-generic-multi-check")
-            if Directory.Exists(compileOutput) then Directory.Delete(compileOutput, true)
-            Directory.CreateDirectory(compileOutput) |> ignore
-
-            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ generatedJava
-            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
-            if javacCode <> 0 then
-                failwithf "javac rejected multi-arg generic Java output:\n%s" javacErr
-            true |> equal true
-
+        // ---- Records and DUs ----
         testCase "F# record emits Java class with fields" <| fun _ ->
-            let _, errors = compileJava "module Program\ntype Point = { X: int; Y: int }"
+            let errors, content = compileAndRead "module Program\ntype Point = { X: int; Y: int }" (Some "record")
             errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
-
-            let content = generatedJava |> List.map File.ReadAllText |> String.concat "\n"
-            // The record class should contain the field names
             (content.Contains("Point") && content.Contains("X") && content.Contains("Y")) |> equal true
 
-        testCase "F# record type compiles with javac" <| fun _ ->
-            let _, errors = compileJava "module Program\ntype Point = { X: int; Y: int }"
+        testCase "F# record emits structural equals hashCode and toString" <| fun _ ->
+            let errors, content = compileAndRead "module Program\ntype Point = { X: int; Y: int }" (Some "record-structural")
             errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
-
-            let compileOutput = System.IO.Path.Combine(outDir, "javac-record-check")
-            if Directory.Exists(compileOutput) then Directory.Delete(compileOutput, true)
-            Directory.CreateDirectory(compileOutput) |> ignore
-
-            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ generatedJava
-            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
-            if javacCode <> 0 then
-                failwithf "javac rejected record Java output:\n%s" javacErr
-            true |> equal true
+            content.Contains("@Override public boolean equals(Object obj)") |> equal true
+            content.Contains("@Override public int hashCode()") |> equal true
+            content.Contains("@Override public String toString()") |> equal true
 
         testCase "F# DU emits abstract base class with inner subclasses" <| fun _ ->
-            let _, errors = compileJava "module Program\ntype Shape = | Circle of Radius: double | Rectangle of Width: double * Height: double"
+            let src = "module Program\ntype Shape = | Circle of Radius: double | Rectangle of Width: double * Height: double"
+            let errors, content = compileAndRead src (Some "du")
             errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
-
-            let content = generatedJava |> List.map File.ReadAllText |> String.concat "\n"
-            // Should contain the DU abstract base and the case names as inner classes
             (content.Contains("Shape") && content.Contains("Circle") && content.Contains("Rectangle")) |> equal true
+            content.Contains("enum Tag { Circle, Rectangle }") |> equal true
+            content.Contains("abstract Tag tag()") |> equal true
+            content.Contains("return Tag.Circle") |> equal true
 
-        testCase "F# DU type compiles with javac" <| fun _ ->
-            let _, errors = compileJava "module Program\ntype Shape = | Circle of Radius: double | Rectangle of Width: double * Height: double"
+        testCase "F# DU cases emit structural equals hashCode and toString" <| fun _ ->
+            let src = "module Program\ntype Shape = | Circle of Radius: double | Rectangle of Width: double * Height: double"
+            let errors, content = compileAndRead src (Some "du-structural")
             errors.Length |> equal 0
+            content.Contains("if (!(obj instanceof Circle)) return false;") |> equal true
+            content.Contains("if (!(obj instanceof Rectangle)) return false;") |> equal true
+            content.Contains("java.util.Objects.hash(Shape.Tag.Circle") |> equal true
+            content.Contains("java.util.Objects.hash(Shape.Tag.Rectangle") |> equal true
 
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
+        testCase "explicit downcast currently emits helper call" <| fun _ ->
+            let src = """module Program
+let asString (x: obj) = x :?> string
+"""
+            let errors, content = compileAndRead src (Some "typecast-downcast")
+            errors.Length |> equal 0
+            content.Contains("downcast(x)") |> equal true
 
-            let compileOutput = System.IO.Path.Combine(outDir, "javac-du-check")
-            if Directory.Exists(compileOutput) then Directory.Delete(compileOutput, true)
-            Directory.CreateDirectory(compileOutput) |> ignore
-
-            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ generatedJava
-            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
-            if javacCode <> 0 then
-                failwithf "javac rejected DU Java output:\n%s" javacErr
-            true |> equal true
-
+        // ---- Classes with instance methods ----
         testCase "F# class constructor initializes instance fields" <| fun _ ->
             let src = """module Program
 type Counter(initial: int) =
@@ -343,14 +103,8 @@ type Counter(initial: int) =
     member this.Increment() = count <- count + 1
     member this.Add n = count <- count + n
 """
-            let _, errors = compileJava src
+            let errors, content = compileAndRead src (Some "class-constructor")
             errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
-
-            let content = generatedJava |> List.map File.ReadAllText |> String.concat "\n"
-            // Class should exist with the field and constructor
             (content.Contains("Counter") && content.Contains("count") && content.Contains("initial")) |> equal true
 
         testCase "F# class instance methods are inside the class body" <| fun _ ->
@@ -361,17 +115,10 @@ type Counter(initial: int) =
     member this.Increment() = count <- count + 1
     member this.Add n = count <- count + n
 """
-            let _, errors = compileJava src
+            let errors, content = compileAndRead src None
             errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
-
-            let content = generatedJava |> List.map File.ReadAllText |> String.concat "\n"
-            // Instance methods must NOT be static module-level functions with mangled names
             content.Contains("Counter__Increment") |> equal false
             content.Contains("Counter__get_Value") |> equal false
-            // And should have the properly named methods present
             content.Contains("increment") |> equal true
             content.Contains("getValue") |> equal true
 
@@ -382,94 +129,17 @@ type Counter(initial: int) =
     member this.Value = count
     member this.Increment() = count <- count + 1
 """
-            let _, errors = compileJava src
+            let errors, content = compileAndRead src None
             errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            let content = generatedJava |> List.map File.ReadAllText |> String.concat "\n"
-            // F# unit argument must not appear as a Java parameter
             content.Contains("unitVar") |> equal false
             content.Contains("void unitVar") |> equal false
 
-        testCase "F# class with instance state compiles with javac" <| fun _ ->
-            let src = """module Program
-type Counter(initial: int) =
-    let mutable count = initial
-    member this.Value = count
-    member this.Increment() = count <- count + 1
-    member this.Add n = count <- count + n
-"""
-            let _, errors = compileJava src
-            errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
-
-            let compileOutput = System.IO.Path.Combine(outDir, "javac-class-check")
-            if Directory.Exists(compileOutput) then Directory.Delete(compileOutput, true)
-            Directory.CreateDirectory(compileOutput) |> ignore
-
-            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ generatedJava
-            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
-            if javacCode <> 0 then
-                failwithf "javac rejected F# class Java output:\n%s" javacErr
-            true |> equal true
-
-        testCase "F# class can be instantiated and methods called at runtime" <| fun _ ->
-            let src = """module Program
-type Counter(initial: int) =
-    let mutable count = initial
-    member this.Value = count
-    member this.Increment() = count <- count + 1
-    member this.Add n = count <- count + n
-"""
-            let _, errors = compileJava src
-            errors.Length |> equal 0
-
-            let generatedJava = getGeneratedJavaFiles ()
-            generatedJava.IsEmpty |> equal false
-
-            let runnerJava = System.IO.Path.Combine(outDir, "ClassRunner.java")
-            File.WriteAllText(
-                runnerJava,
-                """package testproject;
-
-public class ClassRunner {
-    public static void main(String[] args) {
-        Program.Counter c = new Program.Counter(5);
-        c.increment();
-        if (c.count != 6) {
-            throw new RuntimeException("Expected count=6 after increment, got " + c.count);
-        }
-        c.add(4);
-        if (c.count != 10) {
-            throw new RuntimeException("Expected count=10 after add(4), got " + c.count);
-        }
-    }
-}
-"""
-            )
-
-            let compileOutput = System.IO.Path.Combine(outDir, "javac-class-run")
-            if Directory.Exists(compileOutput) then Directory.Delete(compileOutput, true)
-            Directory.CreateDirectory(compileOutput) |> ignore
-
-            let runtimeSources = Directory.GetFiles(runtimeDir, "*.java") |> Array.toList
-            let javacArgs = [ "--release"; "8"; "-d"; compileOutput ] @ runtimeSources @ generatedJava @ [ runnerJava ]
-            let javacCode, _, javacErr = runProcess "javac" javacArgs repoRoot
-            if javacCode <> 0 then
-                failwithf "javac failed for Counter class runtime test:\n%s" javacErr
-
-            let javaCode, _, javaErr = runProcess "java" [ "-cp"; compileOutput; "testproject.ClassRunner" ] repoRoot
-            if javaCode <> 0 then
-                failwithf "Counter class runtime execution failed:\n%s" javaErr
-            true |> equal true
-
+        // ---- Multi-file ----
         testCase "multi-file compilation uses distinct package paths" <| fun _ ->
             let originalProject = File.ReadAllText(projectFile)
             let originalProgram = File.ReadAllText(sourceFile)
-            let subDir = System.IO.Path.Combine(projectDir, "Sub")
-            let subFile = System.IO.Path.Combine(subDir, "Program.fs")
+            let subDir = Path.Combine(projectDir, "Sub")
+            let subFile = Path.Combine(subDir, "Program.fs")
 
             try
                 Directory.CreateDirectory(subDir) |> ignore
@@ -478,7 +148,7 @@ public class ClassRunner {
 
                 File.WriteAllText(
                     projectFile,
-                                        """<Project Sdk="Microsoft.NET.Sdk">
+                    """<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
@@ -516,4 +186,466 @@ public class ClassRunner {
 
                 if Directory.Exists(subDir) && Directory.GetFileSystemEntries(subDir).Length = 0 then
                     Directory.Delete(subDir)
+
+        // -----------------------------------------------------------------------
+        // Pattern matching (DecisionTree) — string content checks
+        // -----------------------------------------------------------------------
+
+        testCase "DU match emits target body expressions, not placeholders" <| fun _ ->
+            let src = """module Program
+type Shape = Circle of float | Square of float
+
+let area (s: Shape) =
+    match s with
+    | Circle r -> 3.14 * r * r
+    | Square side -> side * side
+"""
+            let errors, content = compileAndRead src (Some "du-match")
+            errors.Length |> equal 0
+            // 3.14 only appears in target[0] body — proves targets are resolved
+            content.Contains("3.14") |> equal true
+            // Placeholder comments must not survive
+            content.Contains("DecisionTreeSuccess") |> equal false
+
+        testCase "integer literal match emits target body strings" <| fun _ ->
+            let src = """module Program
+let describe (n: int) =
+    match n with
+    | 1 -> "one"
+    | 2 -> "two"
+    | _ -> "other"
+"""
+            let errors, content = compileAndRead src (Some "int-match")
+            errors.Length |> equal 0
+            // String constants live in targets — only appear if targets are resolved
+            content.Contains("\"one\"") |> equal true
+            content.Contains("\"two\"") |> equal true
+            content.Contains("\"other\"") |> equal true
+
+        testCase "multi-bound DU match emits bound value access" <| fun _ ->
+            let src = """module Program
+type Shape = Circle of float | Rectangle of float * float
+
+let perimeter (s: Shape) =
+    match s with
+    | Circle r -> 2.0 * 3.14 * r
+    | Rectangle(w, h) -> 2.0 * (w + h)
+"""
+            let errors, content = compileAndRead src (Some "multi-bound-match")
+            errors.Length |> equal 0
+            // 3.14 is in target[0] body only
+            content.Contains("3.14") |> equal true
+            content.Contains("DecisionTreeSuccess") |> equal false
+
+        testCase "three-case DU match emits all target bodies" <| fun _ ->
+            let src = """module Program
+type Color = Red | Green | Blue
+
+let name (c: Color) =
+    match c with
+    | Red -> "red"
+    | Green -> "green"
+    | Blue -> "blue"
+"""
+            let errors, content = compileAndRead src (Some "three-case-match")
+            errors.Length |> equal 0
+            content.Contains("\"red\"") |> equal true
+            content.Contains("\"green\"") |> equal true
+            content.Contains("\"blue\"") |> equal true
+
+        // -----------------------------------------------------------------------
+        // Tuple emission
+        // -----------------------------------------------------------------------
+
+        testCase "tuple creation emits Tuple2 constructor" <| fun _ ->
+            let src = "module Program\nlet pair = (1, 2)"
+            let errors, content = compileAndRead src (Some "tuple-create")
+            errors.Length |> equal 0
+            content.Contains("fable.library.Tuple.Tuple2") |> equal true
+
+        testCase "tuple field access emits item1 item2" <| fun _ ->
+            let src = """module Program
+let pair = (1, "hello")
+let a = fst pair
+let b = snd pair
+"""
+            let errors, content = compileAndRead src (Some "tuple-access")
+            errors.Length |> equal 0
+            content.Contains(".item1") |> equal true
+            content.Contains(".item2") |> equal true
+
+        testCase "3-tuple emits Tuple3 constructor" <| fun _ ->
+            let src = "module Program\nlet triple = (1, 2, 3)"
+            let errors, content = compileAndRead src (Some "tuple3-create")
+            errors.Length |> equal 0
+            content.Contains("fable.library.Tuple.Tuple3") |> equal true
+
+        // -----------------------------------------------------------------------
+        // List cons emission
+        // -----------------------------------------------------------------------
+
+        testCase "list cons emits FSharpList.cons call" <| fun _ ->
+            let src = "module Program\nlet xs = [1; 2; 3]"
+            let errors, content = compileAndRead src (Some "list-cons")
+            errors.Length |> equal 0
+            content.Contains("FSharpList.cons") |> equal true
+
+        // -----------------------------------------------------------------------
+        // BinaryExponent → Math.pow
+        // -----------------------------------------------------------------------
+
+        testCase "exponent operator emits Math.pow" <| fun _ ->
+            let src = "module Program\nlet result = 2.0 ** 3.0"
+            let errors, content = compileAndRead src (Some "exponent")
+            errors.Length |> equal 0
+            content.Contains("Math.pow") |> equal true
+
+        // -----------------------------------------------------------------------
+        // Operators replacements emit correct Java
+        // -----------------------------------------------------------------------
+
+        testCase "failwith emits RuntimeException throw" <| fun _ ->
+            let src = """module Program
+let boom () = failwith "oops"
+"""
+            let errors, content = compileAndRead src (Some "failwith")
+            errors.Length |> equal 0
+            content.Contains("RuntimeException") |> equal true
+
+        testCase "int conversion emits Java cast" <| fun _ ->
+            let src = "module Program\nlet n = int 3.14"
+            let errors, content = compileAndRead src (Some "int-conversion")
+            errors.Length |> equal 0
+            content.Contains("(int)") |> equal true
+
+        testCase "pipe operators compile without leakage" <| fun _ ->
+            let src = "module Program\nlet result = 3 |> ((+) 2)"
+            let errors, _ = compileAndRead src (Some "pipe-operators")
+            errors.Length |> equal 0
+
+        testCase "composition operator compiles without leakage" <| fun _ ->
+            let src = "module Program\nlet f = ((+) 1) >> ((*) 2)\nlet result = f 5"
+            let errors, _ = compileAndRead src (Some "composition-operator")
+            errors.Length |> equal 0
+
+        testCase "operator call fallback emits Java operator symbols" <| fun _ ->
+            let src = "module Program\nlet add a b = Microsoft.FSharp.Core.Operators.op_Addition a b\nlet value = add 3 4"
+            let errors, content = compileAndRead src (Some "op-addition-fallback")
+            errors.Length |> equal 0
+            content.Contains("+") |> equal true
+
+        testCase "pown emits Math.pow with int exponent cast" <| fun _ ->
+            let src = "module Program\nlet value = pown 2.0 3"
+            let errors, content = compileAndRead src (Some "pown-operator")
+            errors.Length |> equal 0
+            content.Contains("Math.pow") |> equal true
+
+        testCase "lock emits Util.lock helper call" <| fun _ ->
+            let src = "module Program\nlet gate = obj()\nlet value = lock gate (fun () -> 42)"
+            let errors, content = compileAndRead src (Some "lock-operator")
+            errors.Length |> equal 0
+            content.Contains("Util.lock") |> equal true
+
+        testCase "string module emits correct Java" <| fun _ ->
+            let src = """module Program
+let x = "hello"
+let n = x.Length
+let upper = x.ToUpper()
+"""
+            let errors, content = compileAndRead src (Some "string-methods")
+            errors.Length |> equal 0
+            (content.Contains("length()") || content.Contains(".length")) |> equal true
+
+        testCase "TrimStart and TrimEnd emit Java 8-compatible replacements" <| fun _ ->
+            let src = """module Program
+let x = "  hello  "
+let a = x.TrimStart()
+let b = x.TrimEnd()
+"""
+            let errors, content = compileAndRead src (Some "string-trim-java8")
+            errors.Length |> equal 0
+            content.Contains("replaceFirst(\"^\\\\s+\", \"\")") |> equal true
+            content.Contains("replaceFirst(\"\\\\s+$\", \"\")") |> equal true
+            content.Contains("stripLeading") |> equal false
+            content.Contains("stripTrailing") |> equal false
+
+        testCase "String.Split emits literal separator quoting" <| fun _ ->
+            let src = """module Program
+let parts = "a.b.c".Split(".")
+"""
+            let errors, content = compileAndRead src (Some "string-split-literal")
+            errors.Length |> equal 0
+            content.Contains("String.split") |> equal true
+
+        testCase "String.replicate routes to runtime String.replicate" <| fun _ ->
+            let src = """module Program
+let x = String.replicate 3 "ab"
+"""
+            let errors, content = compileAndRead src (Some "string-replicate")
+            errors.Length |> equal 0
+            content.Contains("String.replicate") |> equal true
+
+        // -----------------------------------------------------------------------
+        // Import tracking (D1-D5)
+        // -----------------------------------------------------------------------
+
+        testCase "Option.map emits import and qualified call" <| fun _ ->
+            let src = """module Program
+let result = Option.map (fun x -> x + 1) (Some 42)
+"""
+            let errors, content = compileAndRead src (Some "option-map-import")
+            errors.Length |> equal 0
+            content.Contains("import fable.library.FSharpOption;") |> equal true
+            content.Contains("FSharpOption.map") |> equal true
+
+        testCase "List.map emits import and qualified call" <| fun _ ->
+            let src = """module Program
+let result = List.map (fun x -> x + 1) [1; 2; 3]
+"""
+            let errors, content = compileAndRead src (Some "list-map-import")
+            errors.Length |> equal 0
+            content.Contains("import fable.library.FSharpList;") |> equal true
+            content.Contains("FSharpList.map") |> equal true
+
+        testCase "Array.length emits import and qualified call" <| fun _ ->
+            let src = """module Program
+let n = Array.length [|1; 2; 3|]
+"""
+            let errors, content = compileAndRead src (Some "array-length-import")
+            errors.Length |> equal 0
+            content.Contains("import fable.library.Array;") |> equal true
+            content.Contains("Array.length") |> equal true
+
+        // -----------------------------------------------------------------------
+        // C6 — Collection module expansion coverage
+        // -----------------------------------------------------------------------
+
+        testCase "List.filter emits FSharpList.filter call" <| fun _ ->
+            let src = """module Program
+let result = List.filter (fun x -> x > 1) [1; 2; 3]
+"""
+            let errors, content = compileAndRead src (Some "list-filter")
+            errors.Length |> equal 0
+            content.Contains("FSharpList.filter") |> equal true
+
+        testCase "List.fold emits FSharpList.fold call" <| fun _ ->
+            let src = """module Program
+let result = List.fold (fun acc x -> acc + x) 0 [1; 2; 3]
+"""
+            let errors, content = compileAndRead src (Some "list-fold")
+            errors.Length |> equal 0
+            content.Contains("FSharpList.fold") |> equal true
+
+        testCase "List.length emits FSharpList.length call" <| fun _ ->
+            let src = """module Program
+let n = List.length [1; 2; 3]
+"""
+            let errors, content = compileAndRead src (Some "list-length")
+            errors.Length |> equal 0
+            content.Contains("FSharpList.length") |> equal true
+
+        testCase "List.rev emits FSharpList.reverse call" <| fun _ ->
+            let src = """module Program
+let result = List.rev [1; 2; 3]
+"""
+            let errors, content = compileAndRead src (Some "list-rev")
+            errors.Length |> equal 0
+            // List.rev compiles as ListModule.Reverse → lowerFirst → "reverse"
+            (content.Contains("FSharpList.reverse") || content.Contains("FSharpList.rev")) |> equal true
+
+        testCase "List.exists emits FSharpList.exists call" <| fun _ ->
+            let src = """module Program
+let result = List.exists (fun x -> x > 2) [1; 2; 3]
+"""
+            let errors, content = compileAndRead src (Some "list-exists")
+            errors.Length |> equal 0
+            content.Contains("FSharpList.exists") |> equal true
+
+        testCase "List.forall emits FSharpList.forAll call" <| fun _ ->
+            let src = """module Program
+let result = List.forall (fun x -> x > 0) [1; 2; 3]
+"""
+            let errors, content = compileAndRead src (Some "list-forall")
+            errors.Length |> equal 0
+            content.Contains("FSharpList.forAll") |> equal true
+
+        testCase "List.append emits FSharpList.append call" <| fun _ ->
+            let src = """module Program
+let result = List.append [1; 2] [3; 4]
+"""
+            let errors, content = compileAndRead src (Some "list-append")
+            errors.Length |> equal 0
+            content.Contains("FSharpList.append") |> equal true
+
+        testCase "List.find emits FSharpList.find call" <| fun _ ->
+            let src = """module Program
+let result = List.find (fun x -> x > 1) [1; 2; 3]
+"""
+            let errors, content = compileAndRead src (Some "list-find")
+            errors.Length |> equal 0
+            content.Contains("FSharpList.find") |> equal true
+
+        testCase "List.tryFind emits FSharpList.tryFind call" <| fun _ ->
+            let src = """module Program
+let result = List.tryFind (fun x -> x > 5) [1; 2; 3]
+"""
+            let errors, content = compileAndRead src (Some "list-tryfind")
+            errors.Length |> equal 0
+            content.Contains("FSharpList.tryFind") |> equal true
+
+        testCase "List.head emits FSharpList.head call" <| fun _ ->
+            let src = """module Program
+let result = List.head [1; 2; 3]
+"""
+            let errors, content = compileAndRead src (Some "list-head")
+            errors.Length |> equal 0
+            content.Contains("FSharpList.head") |> equal true
+
+        testCase "List.tail emits FSharpList.tail call" <| fun _ ->
+            let src = """module Program
+let result = List.tail [1; 2; 3]
+"""
+            let errors, content = compileAndRead src (Some "list-tail")
+            errors.Length |> equal 0
+            content.Contains("FSharpList.tail") |> equal true
+
+        testCase "List.isEmpty emits FSharpList.isEmpty call" <| fun _ ->
+            let src = """module Program
+let result = List.isEmpty [1; 2; 3]
+"""
+            let errors, content = compileAndRead src (Some "list-isempty")
+            errors.Length |> equal 0
+            content.Contains("FSharpList.isEmpty") |> equal true
+
+        testCase "List.item emits FSharpList.item call" <| fun _ ->
+            let src = """module Program
+let result = List.item 1 [1; 2; 3]
+"""
+            let errors, content = compileAndRead src (Some "list-item")
+            errors.Length |> equal 0
+            content.Contains("FSharpList.item") |> equal true
+
+        testCase "Array.map emits Array.map call" <| fun _ ->
+            let src = """module Program
+let result = Array.map (fun x -> x * 2) [|1; 2; 3|]
+"""
+            let errors, content = compileAndRead src (Some "array-map")
+            errors.Length |> equal 0
+            content.Contains("Array.map") |> equal true
+
+        testCase "Array.filter emits Array.filter call" <| fun _ ->
+            let src = """module Program
+let result = Array.filter (fun x -> x > 1) [|1; 2; 3|]
+"""
+            let errors, content = compileAndRead src (Some "array-filter")
+            errors.Length |> equal 0
+            content.Contains("Array.filter") |> equal true
+
+        testCase "Array.fold emits Array.fold call" <| fun _ ->
+            let src = """module Program
+let result = Array.fold (fun acc x -> acc + x) 0 [|1; 2; 3|]
+"""
+            let errors, content = compileAndRead src (Some "array-fold")
+            errors.Length |> equal 0
+            content.Contains("Array.fold") |> equal true
+
+        testCase "Array.exists emits Array.exists call" <| fun _ ->
+            let src = """module Program
+let result = Array.exists (fun x -> x > 2) [|1; 2; 3|]
+"""
+            let errors, content = compileAndRead src (Some "array-exists")
+            errors.Length |> equal 0
+            content.Contains("Array.exists") |> equal true
+
+        testCase "Array.forall emits Array.forAll call" <| fun _ ->
+            let src = """module Program
+let result = Array.forall (fun x -> x > 0) [|1; 2; 3|]
+"""
+            let errors, content = compileAndRead src (Some "array-forall")
+            errors.Length |> equal 0
+            content.Contains("Array.forAll") |> equal true
+
+        testCase "Array.sortBy emits Array.sortBy call" <| fun _ ->
+            let src = """module Program
+let result = Array.sortBy (fun x -> x) [|3; 1; 2|]
+"""
+            let errors, content = compileAndRead src (Some "array-sortby")
+            errors.Length |> equal 0
+            content.Contains("Array.sortBy") |> equal true
+
+        testCase "Option.map emits FSharpOption.map call" <| fun _ ->
+            let src = """module Program
+let result = Option.map (fun x -> x + 1) (Some 42)
+"""
+            let errors, content = compileAndRead src (Some "option-map")
+            errors.Length |> equal 0
+            content.Contains("FSharpOption.map") |> equal true
+
+        testCase "Option.bind emits FSharpOption.bind call" <| fun _ ->
+            let src = """module Program
+let result = Option.bind (fun x -> if x > 0 then Some x else None) (Some 42)
+"""
+            let errors, content = compileAndRead src (Some "option-bind")
+            errors.Length |> equal 0
+            content.Contains("FSharpOption.bind") |> equal true
+
+        testCase "Option.defaultValue emits FSharpOption.defaultValue call" <| fun _ ->
+            let src = """module Program
+let result = Option.defaultValue 0 (Some 42)
+"""
+            let errors, content = compileAndRead src (Some "option-defaultvalue")
+            errors.Length |> equal 0
+            content.Contains("FSharpOption.defaultValue") |> equal true
+
+        testCase "Option.isSome emits FSharpOption.isSome call" <| fun _ ->
+            let src = """module Program
+let result = Option.isSome (Some 42)
+"""
+            let errors, content = compileAndRead src (Some "option-issome")
+            errors.Length |> equal 0
+            content.Contains("FSharpOption.isSome") |> equal true
+
+        testCase "Option.isNone emits FSharpOption.isNone call" <| fun _ ->
+            let src = """module Program
+let result = Option.isNone None
+"""
+            let errors, content = compileAndRead src (Some "option-isnone")
+            errors.Length |> equal 0
+            content.Contains("FSharpOption.isNone") |> equal true
+
+        testCase "Map.add emits Map.add call" <| fun _ ->
+            let src = """module Program
+let m = Map.ofList [(1, "one"); (2, "two")]
+let m2 = Map.add 3 "three" m
+"""
+            let errors, content = compileAndRead src (Some "map-add")
+            errors.Length |> equal 0
+            content.Contains("Map.add") |> equal true
+
+        testCase "Map.tryFind emits Map.tryFind call" <| fun _ ->
+            let src = """module Program
+let m = Map.ofList [(1, "one"); (2, "two")]
+let result = Map.tryFind 1 m
+"""
+            let errors, content = compileAndRead src (Some "map-tryfind")
+            errors.Length |> equal 0
+            content.Contains("Map.tryFind") |> equal true
+
+        testCase "Set.contains emits Set.contains call" <| fun _ ->
+            let src = """module Program
+let s = Set.ofList [1; 2; 3]
+let result = Set.contains 2 s
+"""
+            let errors, content = compileAndRead src (Some "set-contains")
+            errors.Length |> equal 0
+            content.Contains("Set.contains") |> equal true
+
+        testCase "Set.add emits Set.add call" <| fun _ ->
+            let src = """module Program
+let s = Set.ofList [1; 2; 3]
+let s2 = Set.add 4 s
+"""
+            let errors, content = compileAndRead src (Some "set-add")
+            errors.Length |> equal 0
+            content.Contains("Set.add") |> equal true
     ]

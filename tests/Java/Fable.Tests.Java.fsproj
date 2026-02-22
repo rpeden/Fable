@@ -23,7 +23,9 @@
     <Compile Include="JavaReplacementsTests.fs" />
     <Compile Include="JavaRuntimeSurfaceTests.fs" />
     <Compile Include="JavaBuildWiringTests.fs" />
+    <Compile Include="JavaTestHelpers.fs" />
     <Compile Include="JavaCompilerSmokeTests.fs" />
+    <Compile Include="JavaIntegrationTests.fs" />
     <Compile Include="JavaNamingTests.fs" />
     <Compile Include="JavaRuntimeExecutionTests.fs" />
     <Compile Include="Main.fs" />
